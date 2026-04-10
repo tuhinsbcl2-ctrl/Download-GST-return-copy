@@ -47,18 +47,41 @@ class GSTPortalAutomator:
         input("Press ENTER in this console AFTER you have successfully logged in and the dashboard is visible...")
         logging.info("Manual login confirmed.")
 
+    def _get_ancestor_text(self, element):
+        """Return the innerText of the nearest enclosing div for the given element."""
+        try:
+            return self.driver.execute_script(
+                "return arguments[0].closest('div').innerText || '';", element
+            )
+        except Exception:
+            return ""
+
     def navigate_to_returns_dashboard(self):
         logging.info("Clicking on 'RETURN DASHBOARD' button...")
         try:
             dashboard_btn = self.wait.until(EC.element_to_be_clickable(
-                (By.XPATH, "//*[normalize-space(text())='RETURN DASHBOARD']")
+                (By.XPATH, "//*[contains(text(), 'RETURN DASHBOARD') or contains(text(), 'Return Dashboard')]")
             ))
             self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", dashboard_btn)
             time.sleep(1)
-            dashboard_btn.click()
+            self.driver.execute_script("arguments[0].click();", dashboard_btn)
             logging.info("Successfully navigated to Returns Dashboard.")
         except Exception as e:
-            logging.error(f"Failed to click Return Dashboard: {e}")
+            logging.warning(f"Primary XPath for Return Dashboard failed, trying fallback: {e}")
+            try:
+                candidates = self.driver.find_elements(By.XPATH, "//*[self::button or self::a or @role='button']")
+                dashboard_btn = next(
+                    (btn for btn in candidates if 'RETURN DASHBOARD' in btn.text.upper()),
+                    None
+                )
+                if dashboard_btn is None:
+                    raise Exception("Could not locate RETURN DASHBOARD button via fallback.")
+                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", dashboard_btn)
+                time.sleep(1)
+                self.driver.execute_script("arguments[0].click();", dashboard_btn)
+                logging.info("Successfully navigated to Returns Dashboard via fallback.")
+            except Exception as e2:
+                logging.error(f"Failed to click Return Dashboard: {e2}")
 
     def select_period(self, financial_year, quarter, month):
         logging.info(f"Selecting FY: {financial_year}, Quarter: {quarter}, Month: {month}")
@@ -95,17 +118,25 @@ class GSTPortalAutomator:
     def download_gstr3b(self):
         logging.info("Downloading GSTR-3B PDF...")
         try:
-            btn_xpath = "//*[contains(text(), 'GSTR-3B')]/ancestor::div[contains(@class, 'card') or contains(@class, 'box')]//button[normalize-space(text())='DOWNLOAD']"
-            fallback_xpath = "(//button[normalize-space(text())='DOWNLOAD'])[2]"
+            btn_xpath = "//div[contains(., 'GSTR-3B') or contains(., 'GSTR 3B')]//button[contains(text(), 'DOWNLOAD')]"
             try:
                 download_btn = self.wait.until(EC.element_to_be_clickable((By.XPATH, btn_xpath)))
             except Exception:
-                logging.warning("Primary GSTR-3B Xpath failed, using fallback...")
-                download_btn = self.wait.until(EC.element_to_be_clickable((By.XPATH, fallback_xpath)))
+                logging.warning("Primary GSTR-3B XPath failed, using fallback...")
+                all_buttons = self.driver.find_elements(By.TAG_NAME, "button")
+                download_btn = None
+                for btn in all_buttons:
+                    if 'DOWNLOAD' in btn.text.strip().upper():
+                        ancestor_text = self._get_ancestor_text(btn)
+                        if 'GSTR-3B' in ancestor_text or 'GSTR 3B' in ancestor_text:
+                            download_btn = btn
+                            break
+                if download_btn is None:
+                    raise Exception("Could not locate GSTR-3B DOWNLOAD button via fallback.")
 
             self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", download_btn)
             time.sleep(1)
-            download_btn.click()
+            self.driver.execute_script("arguments[0].click();", download_btn)
             logging.info("GSTR-3B PDF Download clicked.")
             time.sleep(3)
             
@@ -115,15 +146,25 @@ class GSTPortalAutomator:
     def download_gstr1(self):
         logging.info("Processing GSTR-1...")
         try:
-            view_xpath = "//*[contains(text(), 'GSTR1')]/ancestor::div[contains(@class, 'card') or contains(@class, 'box')]//button[normalize-space(text())='VIEW']"
+            view_xpath = "//div[contains(., 'GSTR1') or contains(., 'GSTR-1')]//button[contains(text(), 'VIEW')]"
             try:
                 view_btn = self.wait.until(EC.element_to_be_clickable((By.XPATH, view_xpath)))
             except Exception:
-                view_btn = self.wait.until(EC.element_to_be_clickable((By.XPATH, "(//button[normalize-space(text())='VIEW'])[1]")))
-                
+                logging.warning("Primary GSTR-1 VIEW XPath failed, using fallback...")
+                all_buttons = self.driver.find_elements(By.TAG_NAME, "button")
+                view_btn = None
+                for btn in all_buttons:
+                    if 'VIEW' in btn.text.strip().upper():
+                        ancestor_text = self._get_ancestor_text(btn)
+                        if 'GSTR1' in ancestor_text or 'GSTR-1' in ancestor_text:
+                            view_btn = btn
+                            break
+                if view_btn is None:
+                    raise Exception("Could not locate GSTR-1 VIEW button via fallback.")
+
             self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", view_btn)
             time.sleep(1)
-            view_btn.click()
+            self.driver.execute_script("arguments[0].click();", view_btn)
             logging.info("Clicked VIEW for GSTR-1. Waiting for page to load...")
             
             time.sleep(3)
